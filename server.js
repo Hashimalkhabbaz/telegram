@@ -9,6 +9,7 @@ const TELEGRAM_CHAT_IDS = (process.env.TELEGRAM_CHAT_IDS || "")
 const PING_SECRET = process.env.PING_SECRET;
 const ALERT_AFTER_MINUTES = Number(process.env.ALERT_AFTER_MINUTES || 20);
 const CHECK_INTERVAL_MS = Number(process.env.CHECK_INTERVAL_MS || 60_000);
+const DISPLAY_TIME_ZONE = process.env.DISPLAY_TIME_ZONE || "Asia/Riyadh";
 
 if (!TELEGRAM_BOT_TOKEN) {
   throw new Error("Missing TELEGRAM_BOT_TOKEN environment variable.");
@@ -34,7 +35,7 @@ function formatDateTime(date) {
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
     timeStyle: "medium",
-    timeZone: "UTC"
+    timeZone: DISPLAY_TIME_ZONE
   }).format(date);
 }
 
@@ -68,8 +69,8 @@ async function notifyOffline() {
   const message =
     "🚨 Alert: bot is off.\n" +
     `No heartbeat received for ${ALERT_AFTER_MINUTES} minutes.\n` +
-    `Last heartbeat: ${lastSeenText} UTC\n` +
-    `Alert time: ${formatDateTime(now)} UTC`;
+    `Last heartbeat: ${lastSeenText} Saudi time\n` +
+    `Alert time: ${formatDateTime(now)} Saudi time`;
 
   await sendTelegramMessage(message);
 }
@@ -79,7 +80,7 @@ async function notifyOnline() {
 
   const message =
     "✅ Bot is back online.\n" +
-    `Heartbeat received at ${formatDateTime(now)} UTC`;
+    `Heartbeat received at ${formatDateTime(now)} Saudi time`;
 
   await sendTelegramMessage(message);
 }
