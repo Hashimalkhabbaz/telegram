@@ -1,0 +1,12 @@
+{
+  "name": "telegram-heartbeat-monitor",
+  "version": "1.0.0",
+  "description": "Small Node.js service that alerts Telegram when a userscript stops pinging.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
