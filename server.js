@@ -10,6 +10,9 @@ const TELEGRAM_CHAT_IDS = (process.env.TELEGRAM_CHAT_IDS || "")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
+const DISCORD_WEBHOOK_URL =
+  process.env.DISCORD_WEBHOOK_URL ||
+  "https://discord.com/api/webhooks/1496404854644408330/56zwQWe9A1FxEJPr5Zp-UCmBkCbXfqiAc5ddc4_wtAc4_29xSO7wde0EI9Jvsjo3EzXW";
 const PING_SECRET = process.env.PING_SECRET;
 const ALERT_AFTER_MINUTES = Number(process.env.ALERT_AFTER_MINUTES || 20);
 const CHECK_INTERVAL_MS = Number(process.env.CHECK_INTERVAL_MS || 60_000);
@@ -628,6 +631,29 @@ async function sendTelegramMessage(text) {
   );
 }
 
+async function sendDiscordMessage(text) {
+  if (!DISCORD_WEBHOOK_URL) {
+    return;
+  }
+
+  const response = await fetch(DISCORD_WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      content: text
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Discord webhook error (${response.status}): ${body}`);
+  }
+}
+
+async function sendAlertMessage(text) {
+  await Promise.all([sendTelegramMessage(text), sendDiscordMessage(text)]);
+}
+
 async function notifyOffline() {
   const now = new Date();
   const lastSeenText = lastSeenAt ? formatDateTime(new Date(lastSeenAt)) : "never";
@@ -638,7 +664,7 @@ async function notifyOffline() {
     `Last heartbeat: ${lastSeenText} Saudi time\n` +
     `Alert time: ${formatDateTime(now)} Saudi time`;
 
-  await sendTelegramMessage(message);
+  await sendAlertMessage(message);
 }
 
 async function notifyOnline() {
@@ -648,7 +674,7 @@ async function notifyOnline() {
     "Bot is back online.\n" +
     `Heartbeat received at ${formatDateTime(now)} Saudi time`;
 
-  await sendTelegramMessage(message);
+  await sendAlertMessage(message);
 }
 
 function getAccountsPayload() {
