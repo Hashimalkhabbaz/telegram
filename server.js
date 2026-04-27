@@ -135,6 +135,10 @@ function formatDateTime(date) {
   }).format(date);
 }
 
+function formatServerTime(date = new Date()) {
+  return `${formatDateTime(date)} (${DISPLAY_TIME_ZONE})`;
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => {
     const map = {
@@ -656,13 +660,13 @@ async function sendAlertMessage(text) {
 
 async function notifyOffline() {
   const now = new Date();
-  const lastSeenText = lastSeenAt ? formatDateTime(new Date(lastSeenAt)) : "never";
+  const lastSeenText = lastSeenAt ? formatServerTime(new Date(lastSeenAt)) : "Never";
 
   const message =
-    "Alert: bot is off.\n" +
-    `No heartbeat received for ${ALERT_AFTER_MINUTES} minutes.\n` +
-    `Last heartbeat: ${lastSeenText} Saudi time\n` +
-    `Alert time: ${formatDateTime(now)} Saudi time`;
+    "🚨 Bot Offline Alert\n\n" +
+    `⏳ No heartbeat for: ${ALERT_AFTER_MINUTES} minutes\n` +
+    `📡 Last heartbeat: ${lastSeenText}\n` +
+    `🕒 Server time: ${formatServerTime(now)}`;
 
   await sendAlertMessage(message);
 }
@@ -671,8 +675,9 @@ async function notifyOnline() {
   const now = new Date();
 
   const message =
-    "Bot is back online.\n" +
-    `Heartbeat received at ${formatDateTime(now)} Saudi time`;
+    "✅ Bot Back Online\n\n" +
+    `📡 Heartbeat received\n` +
+    `🕒 Server time: ${formatServerTime(now)}`;
 
   await sendAlertMessage(message);
 }
