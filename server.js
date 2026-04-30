@@ -864,10 +864,71 @@ async function handleUpdateAccountUrl(response, request) {
   }
 }
 
+async function handleExecutorError(response, request) {
+  try {
+    const body = await readRequestBody(request);
+    const parsed = JSON.parse(body || "{}");
+    const message =
+      typeof parsed.message === "string" ? parsed.message.trim() : "";
+
+    if (!message) {
+      return sendJson(
+        response,
+        400,
+        { ok: false, error: "message is required." },
+        { "Access-Control-Allow-Origin": "*" }
+      );
+    }
+
+    const accountName =
+      typeof parsed.accountName === "string" && parsed.accountName.trim()
+        ? parsed.accountName.trim()
+        : "Unknown account";
+    const villageId =
+      typeof parsed.villageId === "string" && parsed.villageId.trim()
+        ? parsed.villageId.trim()
+        : "Unknown village";
+    const mode =
+      typeof parsed.mode === "string" && parsed.mode.trim()
+        ? parsed.mode.trim()
+        : "executor";
+    const targetUrl =
+      typeof parsed.targetUrl === "string" && parsed.targetUrl.trim()
+        ? parsed.targetUrl.trim()
+        : "Unknown target";
+
+    const discordMessage =
+      "Travian executor error\n\n" +
+      `Account: ${accountName}\n` +
+      `Village: ${villageId}\n` +
+      `Mode: ${mode}\n` +
+      `Error: ${message}\n` +
+      `Target: ${targetUrl}\n` +
+      `Server time: ${formatServerTime(new Date())}`;
+
+    await sendDiscordMessage(discordMessage);
+
+    return sendJson(
+      response,
+      200,
+      { ok: true },
+      { "Access-Control-Allow-Origin": "*" }
+    );
+  } catch (error) {
+    console.error("Failed to send executor error:", error);
+    return sendJson(
+      response,
+      500,
+      { ok: false, error: "Failed to send executor error." },
+      { "Access-Control-Allow-Origin": "*" }
+    );
+  }
+}
+
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
-  if (url.pathname.startsWith("/api/accounts")) {
+  if (url.pathname.startsWith("/api/accounts") || url.pathname === "/api/executor-error") {
     setCorsHeaders(response);
 
     if (request.method === "OPTIONS") {
@@ -930,6 +991,10 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "POST" && url.pathname === "/api/accounts/url") {
     return handleUpdateAccountUrl(response, request);
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/executor-error") {
+    return handleExecutorError(response, request);
   }
 
   if (request.method === "POST" && url.pathname === "/ping") {

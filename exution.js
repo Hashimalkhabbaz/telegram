@@ -1,34 +1,40 @@
 // ==UserScript==
-// @name         Travian Reinforcement Executor
-// @namespace    local.travian.reinforcement.executor
-// @version      1.0.0
-// @description  Sends all non-hero troops as reinforcement from every village using the queued localStorage reinforcement URL.
+// @name         Travian Reinforcement/Resource Executor
+// @namespace    local.travian.reinforcement-resource.executor
+// @version      1.1.0
+// @description  Sends all non-hero troops as reinforcement or all resources by merchant from every village using the queued localStorage URL.
 // @match        https://*.travian.com/*
 // @match        https://*.travian.com.sa/*
 // @match        https://*.hispano.travian.com/*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      localhost
+// @connect      127.0.0.1
 // ==/UserScript==
 
 (function () {
   "use strict";
 
   const STORAGE_PREFIX = "travian-reinforcement-url:";
+  const ACTIVE_ACCOUNT_KEY = "travian-active-account";
   const LOGIC_KEY = "travianLogicEnabled";
   const STATE_KEY = "travian-reinforcement-executor-state";
+  const ERROR_REPORT_URL = "http://localhost:3000/api/executor-error";
   const MIN_DELAY_MS = 3000;
   const MAX_DELAY_MS = 5000;
+  const RESOURCE_MIN_DELAY_MS = 2000;
+  const RESOURCE_MAX_DELAY_MS = 3000;
 
   function log(message, extra) {
     if (typeof extra === "undefined") {
-      console.log(`[Travian Reinforcement Executor] ${message}`);
+      console.log(`[Travian Executor] ${message}`);
       return;
     }
 
-    console.log(`[Travian Reinforcement Executor] ${message}`, extra);
+    console.log(`[Travian Executor] ${message}`, extra);
   }
 
-  function randomDelay() {
-    return Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+  function randomDelay(minDelayMs = MIN_DELAY_MS, maxDelayMs = MAX_DELAY_MS) {
+    return Math.floor(Math.random() * (maxDelayMs - minDelayMs + 1)) + minDelayMs;
   }
 
   function wait(ms) {
@@ -40,7 +46,7 @@
       const raw = sessionStorage.getItem(STATE_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch (error) {
-      console.error("[Travian Reinforcement Executor] Failed to parse state:", error);
+      console.error("[Travian Executor] Failed to parse state:", error);
       sessionStorage.removeItem(STATE_KEY);
       return null;
     }
@@ -85,9 +91,17 @@
     try {
       return new URL(rawUrl, window.location.origin);
     } catch (error) {
-      console.error("[Travian Reinforcement Executor] Invalid reinforcement URL:", rawUrl, error);
+      console.error("[Travian Executor] Invalid queued URL:", rawUrl, error);
       return null;
     }
+  }
+
+  function getModeFromTargetUrl(url) {
+    if (url.pathname.endsWith("/karte.php")) {
+      return "resources";
+    }
+
+    return "reinforcement";
   }
 
   function buildVillageTargetUrl(rawUrl, villageId) {
@@ -121,6 +135,70 @@
     return Boolean(document.querySelector("#confirmSendTroops"));
   }
 
+  function parseNumber(text) {
+    const cleaned = String(text || "")
+      .replace(/[^\d-]/g, "")
+      .trim();
+    const value = Number(cleaned || "0");
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function getActiveAccountName() {
+    return localStorage.getItem(ACTIVE_ACCOUNT_KEY) || "";
+  }
+
+  async function reportExecutorError(state, message) {
+    const payload = {
+      accountName: getActiveAccountName(),
+      villageId: state && state.villageIds ? state.villageIds[state.index] : "",
+      targetUrl: state && state.targetUrl ? state.targetUrl : window.location.href,
+      mode: state && state.mode ? state.mode : "",
+      message
+    };
+
+    return new Promise((resolve) => {
+      if (typeof GM_xmlhttpRequest === "function") {
+        GM_xmlhttpRequest({
+          method: "POST",
+          url: ERROR_REPORT_URL,
+          headers: {
+            "Content-Type": "application/json"
+          },
+          data: JSON.stringify(payload),
+          onload: (response) => {
+            if (response.status < 200 || response.status >= 300) {
+              log(`Discord error report failed with status ${response.status}.`);
+            }
+
+            resolve();
+          },
+          onerror: (error) => {
+            console.error("[Travian Executor] Failed to report error to server:", error);
+            resolve();
+          }
+        });
+        return;
+      }
+
+      fetch(ERROR_REPORT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      })
+        .then((response) => {
+          if (!response.ok) {
+            log(`Discord error report failed with status ${response.status}.`);
+          }
+        })
+        .catch((error) => {
+          console.error("[Travian Executor] Failed to report error to server:", error);
+        })
+        .finally(resolve);
+    });
+  }
+
   function fillTroopsWithoutHero() {
     const troopInputs = Array.from(document.querySelectorAll("table#troops input[name^='troop[']"));
     let totalFilled = 0;
@@ -142,7 +220,7 @@
         .replace(/[^\d-]/g, "")
         .trim();
 
-      const amount = Number(rawValue || "0");
+      const amount = parseNumber(rawValue);
       if (!Number.isFinite(amount) || amount <= 0) {
         input.value = "";
         return;
@@ -195,7 +273,7 @@
 
     const sendButton = document.querySelector("button#ok[name='ok']");
     if (!sendButton) {
-      console.error("[Travian Reinforcement Executor] Send button not found.");
+      console.error("[Travian Executor] Send button not found.");
       cleanup(state, false);
       return true;
     }
@@ -216,7 +294,7 @@
 
     const confirmButton = document.querySelector("#confirmSendTroops");
     if (!confirmButton) {
-      console.error("[Travian Reinforcement Executor] Confirm button not found.");
+      console.error("[Travian Executor] Confirm button not found.");
       cleanup(state, false);
       return true;
     }
@@ -248,9 +326,176 @@
     log(`Navigating to village ${villageId} target page in ${delay}ms.`);
     await wait(delay);
 
-    state.phase = "send";
+    state.phase = state.mode === "resources" ? "open-resources" : "send";
     writeState(state);
     window.location.href = nextUrl;
+  }
+
+  function findSendMerchantsLink() {
+    return Array.from(document.querySelectorAll("a.a.arrow")).find((link) => {
+      const text = (link.textContent || "").trim().toLowerCase();
+      const onclick = link.getAttribute("onclick") || "";
+      return text.includes("send merchant") || onclick.includes("openSendResourcesDialog");
+    });
+  }
+
+  function findResourceDialogRoot() {
+    const selector = ".resourceSelector, input[name='lumber'], input[name='clay'], input[name='iron'], input[name='crop']";
+    const element = document.querySelector(selector);
+    if (!element) {
+      return null;
+    }
+
+    return element.closest("form") || element.closest(".dialog") || element.closest("[class*='dialog']") || document;
+  }
+
+  async function waitForResourceDialog(timeoutMs = 10000) {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const dialog = findResourceDialogRoot();
+      if (dialog) {
+        return dialog;
+      }
+
+      await wait(250);
+    }
+
+    return null;
+  }
+
+  function getAvailableMerchants(dialog) {
+    const candidates = Array.from(dialog.querySelectorAll("div, span, p"));
+    const merchantLine = candidates.find((element) => {
+      const text = element.textContent || "";
+      return text.includes("Merchants") && element.querySelector(".nominator");
+    });
+
+    if (!merchantLine) {
+      return null;
+    }
+
+    const nominator = merchantLine.querySelector(".nominator");
+    return parseNumber(nominator ? nominator.textContent : "");
+  }
+
+  function getResourceValidationError(dialog) {
+    const validation = dialog.querySelector(".customValidationRenderElement.targetSelectionValidation.show");
+    const message = validation ? validation.textContent.trim() : "";
+    return message || "";
+  }
+
+  function fillAllResources(dialog) {
+    const buttons = Array.from(dialog.querySelectorAll(".resourceSelector button.fillup:not([disabled])"));
+
+    buttons.forEach((button) => {
+      button.click();
+    });
+
+    return buttons.length;
+  }
+
+  function clickSendResourcesButton(dialog) {
+    const button =
+      dialog.querySelector("button.send[type='submit']") ||
+      Array.from(dialog.querySelectorAll("button[type='submit'], button")).find((candidate) =>
+        (candidate.textContent || "").trim().toLowerCase().includes("send resources")
+      );
+
+    if (!button || button.disabled) {
+      return false;
+    }
+
+    button.click();
+    return true;
+  }
+
+  async function handleResourceMapPage(state) {
+    const delay = randomDelay(RESOURCE_MIN_DELAY_MS, RESOURCE_MAX_DELAY_MS);
+    log(`On map page for village ${state.villageIds[state.index]}. Waiting ${delay}ms before opening merchants.`);
+    await wait(delay);
+
+    const merchantsLink = findSendMerchantsLink();
+    if (!merchantsLink) {
+      log("Send merchant(s) link not found on map page.");
+      await reportExecutorError(state, "Send merchant(s) link not found.");
+      state.index += 1;
+      state.phase = "navigate";
+      writeState(state);
+      await goToNextVillageOrFinish(state);
+      return true;
+    }
+
+    state.phase = "resources-dialog";
+    writeState(state);
+    merchantsLink.click();
+    return handleResourceDialog(state);
+  }
+
+  async function handleResourceDialog(state) {
+    const dialog = await waitForResourceDialog();
+    if (!dialog) {
+      log("Resource dialog did not open.");
+      await reportExecutorError(state, "Resource dialog did not open.");
+      state.index += 1;
+      state.phase = "navigate";
+      writeState(state);
+      await goToNextVillageOrFinish(state);
+      return true;
+    }
+
+    const validationError = getResourceValidationError(dialog);
+    if (validationError) {
+      log(`Resource send validation error: ${validationError}`);
+      await reportExecutorError(state, validationError);
+      cleanup(state, false);
+      return true;
+    }
+
+    const availableMerchants = getAvailableMerchants(dialog);
+    if (availableMerchants === 0) {
+      const message = "No merchants available.";
+      log(`${message} Village ${state.villageIds[state.index]} skipped.`);
+      await reportExecutorError(state, message);
+      state.index += 1;
+      state.phase = "navigate";
+      writeState(state);
+      await goToNextVillageOrFinish(state);
+      return true;
+    }
+
+    const filledButtons = fillAllResources(dialog);
+    log(`Clicked ${filledButtons} resource fill buttons for village ${state.villageIds[state.index]}.`);
+
+    await wait(500);
+
+    const postFillValidationError = getResourceValidationError(dialog);
+    if (postFillValidationError) {
+      log(`Resource send validation error: ${postFillValidationError}`);
+      await reportExecutorError(state, postFillValidationError);
+      cleanup(state, false);
+      return true;
+    }
+
+    const sent = clickSendResourcesButton(dialog);
+    if (!sent) {
+      log("Send resources button not found or disabled.");
+      await reportExecutorError(state, "Send resources button not found or disabled.");
+      state.index += 1;
+      state.phase = "navigate";
+      writeState(state);
+      await goToNextVillageOrFinish(state);
+      return true;
+    }
+
+    state.index += 1;
+    state.phase = "navigate";
+    writeState(state);
+    log(`Sent resources from village ${state.villageIds[state.index - 1]}.`);
+
+    await wait(randomDelay(RESOURCE_MIN_DELAY_MS, RESOURCE_MAX_DELAY_MS));
+    await goToNextVillageOrFinish(state);
+    return true;
   }
 
   function createInitialState() {
@@ -277,6 +522,7 @@
       targetUrl: parsedTarget.toString(),
       villageIds,
       index: 0,
+      mode: getModeFromTargetUrl(parsedTarget),
       phase: "navigate",
       createdAt: Date.now()
     };
@@ -293,7 +539,7 @@
 
       setLogicEnabled(false);
       writeState(state);
-      log("Started new reinforcement run.", state);
+      log(`Started new ${state.mode} run.`, state);
     }
 
     if (!localStorage.getItem(state.storageKey)) {
@@ -323,6 +569,16 @@
       return;
     }
 
+    if (state.phase === "open-resources") {
+      await handleResourceMapPage(state);
+      return;
+    }
+
+    if (state.phase === "resources-dialog") {
+      await handleResourceDialog(state);
+      return;
+    }
+
     log(`Unknown phase "${state.phase}". Resetting executor state.`);
     cleanup(state, false);
   }
@@ -330,7 +586,7 @@
   window.addEventListener("load", () => {
     window.setTimeout(() => {
       startOrResume().catch((error) => {
-        console.error("[Travian Reinforcement Executor] Unexpected error:", error);
+        console.error("[Travian Executor] Unexpected error:", error);
         const state = readState();
         cleanup(state, false);
       });
