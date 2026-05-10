@@ -92,6 +92,12 @@ function loadAccounts() {
             : typeof item.reinforcementUrl === "string"
               ? item.reinforcementUrl.trim()
               : "",
+        pendingResourcesTarget:
+          typeof item.pendingResourcesTarget === "string"
+            ? item.pendingResourcesTarget.trim()
+            : typeof item.resourcesTarget === "string"
+              ? item.resourcesTarget.trim()
+              : "",
         createdAt: item.createdAt || new Date().toISOString(),
         updatedAt: item.updatedAt || item.createdAt || new Date().toISOString()
       }))
@@ -318,15 +324,42 @@ function getAccountsPageHtml() {
       align-items: stretch;
     }
 
-    input[type="url"] {
+    input[type="url"],
+    input[type="number"] {
       width: 100%;
-      min-width: 280px;
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 12px 14px;
       font: inherit;
       color: var(--ink);
       background: #fff;
+    }
+
+    input[type="url"] {
+      min-width: 280px;
+    }
+
+    .actions-cell {
+      min-width: 420px;
+    }
+
+    .action-block + .action-block {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(223, 199, 162, 0.7);
+    }
+
+    .action-title {
+      margin-bottom: 8px;
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .resources-box {
+      display: grid;
+      grid-template-columns: minmax(80px, 1fr) minmax(80px, 1fr) auto;
+      gap: 10px;
+      align-items: stretch;
     }
 
     .hint {
@@ -397,6 +430,14 @@ function getAccountsPageHtml() {
       input[type="url"] {
         min-width: 0;
       }
+
+      .actions-cell {
+        min-width: 0;
+      }
+
+      .resources-box {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -462,6 +503,20 @@ function getAccountsPageHtml() {
       return account && account.pendingReinforcementUrl ? account.pendingReinforcementUrl : "";
     }
 
+    function getStoredResourcesTarget(accountName) {
+      const account = accounts.find((item) => item.accountName === accountName);
+      return account && account.pendingResourcesTarget ? account.pendingResourcesTarget : "";
+    }
+
+    function parseResourcesTarget(value) {
+      const match = String(value || "").trim().match(/^(-?\\d+)\\s*-\\s*(-?\\d+)$/);
+      if (!match) {
+        return { x: "", y: "" };
+      }
+
+      return { x: match[1], y: match[2] };
+    }
+
     function validateReinforcementUrl(value) {
       try {
         const url = new URL(value);
@@ -469,6 +524,19 @@ function getAccountsPageHtml() {
       } catch (error) {
         return false;
       }
+    }
+
+    function validateCoordinate(value) {
+      if (String(value).trim() === "") {
+        return false;
+      }
+
+      const number = Number(value);
+      return Number.isInteger(number) && number >= -400 && number <= 400;
+    }
+
+    function getStatusId(prefix, accountName) {
+      return prefix + "-" + accountName.replace(/[^a-zA-Z0-9_-]/g, "_");
     }
 
     function renderTable() {
@@ -486,8 +554,12 @@ function getAccountsPageHtml() {
         .sort((first, second) => first.accountName.localeCompare(second.accountName))
         .map((account) => {
           const storedUrl = getStoredUrl(account.accountName);
+          const resourcesTarget = getStoredResourcesTarget(account.accountName);
+          const resourcesCoords = parseResourcesTarget(resourcesTarget);
           const safeAccountName = escapeHtml(account.accountName);
           const safeStoredUrl = escapeHtml(storedUrl);
+          const safeResourceX = escapeHtml(resourcesCoords.x);
+          const safeResourceY = escapeHtml(resourcesCoords.y);
 
           return \`
             <tr>
@@ -495,18 +567,48 @@ function getAccountsPageHtml() {
                 <div class="account-name">\${safeAccountName}</div>
                 <div class="stamp">Last seen: \${formatDate(account.updatedAt)}</div>
               </td>
-              <td data-label="Reinforcement URL">
-                <div class="url-box">
-                  <input
-                    type="url"
-                    data-account-name="\${safeAccountName}"
-                    placeholder="https://eternos.x3.hispano.travian.com/build.php?gid=16&tt=2&eventType=5&targetMapId=136970"
-                    value="\${safeStoredUrl}"
-                  >
-                  <button type="button" data-save-name="\${safeAccountName}">Save</button>
+              <td class="actions-cell" data-label="Actions">
+                <div class="action-block">
+                  <div class="action-title">Troops</div>
+                  <div class="url-box">
+                    <input
+                      type="url"
+                      data-url-account-name="\${safeAccountName}"
+                      placeholder="https://eternos.x3.hispano.travian.com/build.php?gid=16&tt=2&eventType=5&targetMapId=136970"
+                      value="\${safeStoredUrl}"
+                    >
+                    <button type="button" data-save-url-name="\${safeAccountName}">Save URL</button>
+                  </div>
+                  <div class="hint">Queued on the server once. After the userscript fetches it, the server clears it.</div>
+                  <div class="saved" id="\${getStatusId("url-saved", account.accountName)}">\${storedUrl ? "Queued for next sync." : ""}</div>
                 </div>
-                <div class="hint">Queued on the server once. After the userscript fetches it, the server clears it.</div>
-                <div class="saved" id="saved-\${account.accountName.replace(/[^a-zA-Z0-9_-]/g, "_")}">\${storedUrl ? "Queued for next sync." : ""}</div>
+
+                <div class="action-block">
+                  <div class="action-title">Resources</div>
+                  <div class="resources-box">
+                    <input
+                      type="number"
+                      data-resource-x-name="\${safeAccountName}"
+                      placeholder="X"
+                      min="-400"
+                      max="400"
+                      step="1"
+                      value="\${safeResourceX}"
+                    >
+                    <input
+                      type="number"
+                      data-resource-y-name="\${safeAccountName}"
+                      placeholder="Y"
+                      min="-400"
+                      max="400"
+                      step="1"
+                      value="\${safeResourceY}"
+                    >
+                    <button type="button" data-save-resource-name="\${safeAccountName}">Send Resources</button>
+                  </div>
+                  <div class="hint">Queued as Resources: x-y. After the userscript fetches it, the server clears it.</div>
+                  <div class="saved" id="\${getStatusId("resources-saved", account.accountName)}">\${resourcesTarget ? "Resources: " + escapeHtml(resourcesTarget) + " queued for next sync." : ""}</div>
+                </div>
               </td>
             </tr>
           \`;
@@ -518,18 +620,18 @@ function getAccountsPageHtml() {
           <thead>
             <tr>
               <th>Account</th>
-              <th>Reinforcement URL</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>\${rows}</tbody>
         </table>
       \`;
 
-      for (const button of root.querySelectorAll("[data-save-name]")) {
+      for (const button of root.querySelectorAll("[data-save-url-name]")) {
         button.addEventListener("click", async () => {
-          const accountName = button.getAttribute("data-save-name");
-          const input = root.querySelector('[data-account-name="' + CSS.escape(accountName) + '"]');
-          const statusId = "saved-" + accountName.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const accountName = button.getAttribute("data-save-url-name");
+          const input = root.querySelector('[data-url-account-name="' + CSS.escape(accountName) + '"]');
+          const statusId = getStatusId("url-saved", accountName);
           const status = document.getElementById(statusId);
           const value = input.value.trim();
 
@@ -563,10 +665,58 @@ function getAccountsPageHtml() {
 
             accounts = Array.isArray(payload.accounts) ? payload.accounts : accounts;
             renderTable();
-            status.textContent = "Queued once. Open Travian on this account to sync it.";
-            status.style.color = "#2f6b3a";
           } catch (error) {
             status.textContent = error.message || "Failed to save URL.";
+            status.style.color = "#9a2f2f";
+          } finally {
+            button.disabled = false;
+          }
+        });
+      }
+
+      for (const button of root.querySelectorAll("[data-save-resource-name]")) {
+        button.addEventListener("click", async () => {
+          const accountName = button.getAttribute("data-save-resource-name");
+          const xInput = root.querySelector('[data-resource-x-name="' + CSS.escape(accountName) + '"]');
+          const yInput = root.querySelector('[data-resource-y-name="' + CSS.escape(accountName) + '"]');
+          const statusId = getStatusId("resources-saved", accountName);
+          const status = document.getElementById(statusId);
+          const x = xInput.value.trim();
+          const y = yInput.value.trim();
+
+          if (!validateCoordinate(x) || !validateCoordinate(y)) {
+            status.textContent = "Please enter valid X and Y coordinates.";
+            status.style.color = "#9a2f2f";
+            return;
+          }
+
+          button.disabled = true;
+          status.textContent = "Saving...";
+          status.style.color = "#7d6242";
+
+          try {
+            const response = await fetch("/api/accounts/resources", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                accountName,
+                x: Number(x),
+                y: Number(y)
+              })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+              throw new Error(payload.error || "Failed to save resources target.");
+            }
+
+            accounts = Array.isArray(payload.accounts) ? payload.accounts : accounts;
+            renderTable();
+          } catch (error) {
+            status.textContent = error.message || "Failed to save resources target.";
             status.style.color = "#9a2f2f";
           } finally {
             button.disabled = false;
@@ -864,6 +1014,79 @@ async function handleUpdateAccountUrl(response, request) {
   }
 }
 
+async function handleUpdateAccountResources(response, request) {
+  try {
+    const body = await readRequestBody(request);
+    const parsed = JSON.parse(body || "{}");
+    const accountName =
+      typeof parsed.accountName === "string" ? parsed.accountName.trim() : "";
+    const x = Number(parsed.x);
+    const y = Number(parsed.y);
+
+    if (!accountName) {
+      return sendJson(
+        response,
+        400,
+        { ok: false, error: "accountName is required." },
+        { "Access-Control-Allow-Origin": "*" }
+      );
+    }
+
+    const hasValidCoordinates =
+      Number.isInteger(x) &&
+      Number.isInteger(y) &&
+      x >= -400 &&
+      x <= 400 &&
+      y >= -400 &&
+      y <= 400;
+
+    if (!hasValidCoordinates) {
+      return sendJson(
+        response,
+        400,
+        { ok: false, error: "Valid x and y coordinates are required." },
+        { "Access-Control-Allow-Origin": "*" }
+      );
+    }
+
+    const existingAccount = accounts.find((item) => item.accountName === accountName);
+
+    if (!existingAccount) {
+      return sendJson(
+        response,
+        404,
+        { ok: false, error: "Account not found." },
+        { "Access-Control-Allow-Origin": "*" }
+      );
+    }
+
+    const resourcesTarget = `${x}-${y}`;
+    existingAccount.pendingResourcesTarget = resourcesTarget;
+    existingAccount.updatedAt = new Date().toISOString();
+    saveAccounts();
+
+    return sendJson(
+      response,
+      200,
+      {
+        ok: true,
+        accountName,
+        resourcesTarget,
+        accounts: getAccountsPayload()
+      },
+      { "Access-Control-Allow-Origin": "*" }
+    );
+  } catch (error) {
+    console.error("Failed to save resources target:", error);
+    return sendJson(
+      response,
+      500,
+      { ok: false, error: "Failed to save resources target." },
+      { "Access-Control-Allow-Origin": "*" }
+    );
+  }
+}
+
 async function handleExecutorError(response, request) {
   try {
     const body = await readRequestBody(request);
@@ -962,9 +1185,15 @@ const server = http.createServer(async (request, response) => {
       const account = accounts.find((item) => item.accountName === accountName);
       let payloadAccount = account || null;
 
-      if (account && consume && account.pendingReinforcementUrl) {
+      const hasPendingAccountWork =
+        account &&
+        consume &&
+        (account.pendingReinforcementUrl || account.pendingResourcesTarget);
+
+      if (hasPendingAccountWork) {
         payloadAccount = { ...account };
         account.pendingReinforcementUrl = "";
+        account.pendingResourcesTarget = "";
         account.updatedAt = new Date().toISOString();
         saveAccounts();
       }
@@ -991,6 +1220,10 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "POST" && url.pathname === "/api/accounts/url") {
     return handleUpdateAccountUrl(response, request);
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/accounts/resources") {
+    return handleUpdateAccountResources(response, request);
   }
 
   if (request.method === "POST" && url.pathname === "/api/executor-error") {

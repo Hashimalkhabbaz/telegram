@@ -2,7 +2,7 @@
 // @name         Travian Account Sync
 // @namespace    local.travian.account.sync
 // @version      1.1.0
-// @description  Sends the current Travian account name to your local server and syncs the saved reinforcement URL into Travian localStorage.
+// @description  Sends the current Travian account name to your local server and syncs queued account actions into Travian localStorage.
 // @match        https://*.travian.com/*
 // @match        https://*.travian.com.sa/*
 // @match        https://*.hispano.travian.com/*
@@ -16,7 +16,8 @@
 
   const SERVER_URL = "http://localhost:3000/api/accounts";
   const SEND_DELAY_MS = 1500;
-  const STORAGE_PREFIX = "travian-reinforcement-url:";
+  const REINFORCEMENT_STORAGE_PREFIX = "travian-reinforcement-url:";
+  const RESOURCES_STORAGE_PREFIX = "travian-resources-target:";
   const ACTIVE_ACCOUNT_KEY = "travian-active-account";
 
   function getAccountName() {
@@ -79,20 +80,32 @@
     });
   }
 
-  async function syncReinforcementUrl(accountName) {
+  async function syncQueuedAccountActions(accountName) {
     try {
       const account = await fetchAccount(accountName);
 
-      if (!account || !account.pendingReinforcementUrl) {
-        console.log("[Travian Account Sync] No queued reinforcement URL on server for:", accountName);
+      if (!account) {
+        console.log("[Travian Account Sync] No queued account actions on server for:", accountName);
         return;
       }
 
-      localStorage.setItem(STORAGE_PREFIX + accountName, account.pendingReinforcementUrl);
+      if (account.pendingReinforcementUrl) {
+        localStorage.setItem(REINFORCEMENT_STORAGE_PREFIX + accountName, account.pendingReinforcementUrl);
+        console.log("[Travian Account Sync] One-time reinforcement URL synced to Travian localStorage for:", accountName);
+      }
+
+      if (account.pendingResourcesTarget) {
+        localStorage.setItem(RESOURCES_STORAGE_PREFIX + accountName, account.pendingResourcesTarget);
+        console.log("[Travian Account Sync] One-time resources target synced to Travian localStorage for:", accountName);
+      }
+
       localStorage.setItem(ACTIVE_ACCOUNT_KEY, accountName);
-      console.log("[Travian Account Sync] One-time reinforcement URL synced to Travian localStorage for:", accountName);
+
+      if (!account.pendingReinforcementUrl && !account.pendingResourcesTarget) {
+        console.log("[Travian Account Sync] No queued account actions on server for:", accountName);
+      }
     } catch (error) {
-      console.error("[Travian Account Sync] Failed to sync reinforcement URL:", error);
+      console.error("[Travian Account Sync] Failed to sync queued account actions:", error);
     }
   }
 
@@ -106,7 +119,7 @@
 
     localStorage.setItem(ACTIVE_ACCOUNT_KEY, accountName);
     sendAccountName(accountName);
-    syncReinforcementUrl(accountName);
+    syncQueuedAccountActions(accountName);
   }
 
   window.setTimeout(init, SEND_DELAY_MS);
