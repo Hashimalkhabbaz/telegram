@@ -91,13 +91,11 @@ function loadAccounts() {
             ? item.pendingReinforcementUrl.trim()
             : typeof item.reinforcementUrl === "string"
               ? item.reinforcementUrl.trim()
-              : "",
-        pendingResourcesTarget:
-          typeof item.pendingResourcesTarget === "string"
-            ? item.pendingResourcesTarget.trim()
-            : typeof item.resourcesTarget === "string"
-              ? item.resourcesTarget.trim()
-              : "",
+              : typeof item.pendingResourcesTarget === "string"
+                ? item.pendingResourcesTarget.trim()
+                : typeof item.resourcesTarget === "string"
+                  ? item.resourcesTarget.trim()
+                  : "",
         createdAt: item.createdAt || new Date().toISOString(),
         updatedAt: item.updatedAt || item.createdAt || new Date().toISOString()
       }))
@@ -500,12 +498,24 @@ function getAccountsPageHtml() {
 
     function getStoredUrl(accountName) {
       const account = accounts.find((item) => item.accountName === accountName);
-      return account && account.pendingReinforcementUrl ? account.pendingReinforcementUrl : "";
+      if (!account || !account.pendingReinforcementUrl) {
+        return "";
+      }
+
+      return account.pendingReinforcementUrl.startsWith("sendResoureses:")
+        ? ""
+        : account.pendingReinforcementUrl;
     }
 
     function getStoredResourcesTarget(accountName) {
       const account = accounts.find((item) => item.accountName === accountName);
-      return account && account.pendingResourcesTarget ? account.pendingResourcesTarget : "";
+      if (!account || !account.pendingReinforcementUrl) {
+        return "";
+      }
+
+      return account.pendingReinforcementUrl.startsWith("sendResoureses:")
+        ? account.pendingReinforcementUrl
+        : "";
     }
 
     function parseResourcesTarget(value) {
@@ -1066,7 +1076,7 @@ async function handleUpdateAccountResources(response, request) {
     }
 
     const resourcesTarget = `sendResoureses:x=${x},y=${y}`;
-    existingAccount.pendingResourcesTarget = resourcesTarget;
+    existingAccount.pendingReinforcementUrl = resourcesTarget;
     existingAccount.updatedAt = new Date().toISOString();
     saveAccounts();
 
@@ -1193,12 +1203,11 @@ const server = http.createServer(async (request, response) => {
       const hasPendingAccountWork =
         account &&
         consume &&
-        (account.pendingReinforcementUrl || account.pendingResourcesTarget);
+        account.pendingReinforcementUrl;
 
       if (hasPendingAccountWork) {
         payloadAccount = { ...account };
         account.pendingReinforcementUrl = "";
-        account.pendingResourcesTarget = "";
         account.updatedAt = new Date().toISOString();
         saveAccounts();
       }
