@@ -509,12 +509,17 @@ function getAccountsPageHtml() {
     }
 
     function parseResourcesTarget(value) {
-      const match = String(value || "").trim().match(/^(-?\\d+)\\s*-\\s*(-?\\d+)$/);
-      if (!match) {
-        return { x: "", y: "" };
+      const commandMatch = String(value || "").trim().match(/^sendResoureses:x=(-?\\d+),y=(-?\\d+)$/);
+      if (commandMatch) {
+        return { x: commandMatch[1], y: commandMatch[2] };
       }
 
-      return { x: match[1], y: match[2] };
+      const legacyMatch = String(value || "").trim().match(/^(-?\\d+)\\s*-\\s*(-?\\d+)$/);
+      if (legacyMatch) {
+        return { x: legacyMatch[1], y: legacyMatch[2] };
+      }
+
+      return { x: "", y: "" };
     }
 
     function validateReinforcementUrl(value) {
@@ -606,8 +611,8 @@ function getAccountsPageHtml() {
                     >
                     <button type="button" data-save-resource-name="\${safeAccountName}">Send Resources</button>
                   </div>
-                  <div class="hint">Queued as Resources: x-y. After the userscript fetches it, the server clears it.</div>
-                  <div class="saved" id="\${getStatusId("resources-saved", account.accountName)}">\${resourcesTarget ? "Resources: " + escapeHtml(resourcesTarget) + " queued for next sync." : ""}</div>
+                  <div class="hint">Queued as sendResoureses:x=4,y=-2. After the userscript fetches it, the server clears it.</div>
+                  <div class="saved" id="\${getStatusId("resources-saved", account.accountName)}">\${resourcesTarget ? escapeHtml(resourcesTarget) + " queued for next sync." : ""}</div>
                 </div>
               </td>
             </tr>
@@ -1060,7 +1065,7 @@ async function handleUpdateAccountResources(response, request) {
       );
     }
 
-    const resourcesTarget = `${x}-${y}`;
+    const resourcesTarget = `sendResoureses:x=${x},y=${y}`;
     existingAccount.pendingResourcesTarget = resourcesTarget;
     existingAccount.updatedAt = new Date().toISOString();
     saveAccounts();
