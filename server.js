@@ -798,14 +798,45 @@ async function sendTelegramMessage(text) {
   );
 }
 
+function summarizeHttpErrorBody(body) {
+  const text = String(body || "");
+  const plainText = text
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const cloudflareCode = plainText.match(/error\s+code:\s*(\d+)|error\s+(\d+)/i);
+  const rayId = plainText.match(/cloudflare\s+ray\s+id:\s*([a-z0-9]+)/i);
+  const details = [];
+
+  if (cloudflareCode) {
+    details.push(`Cloudflare error ${cloudflareCode[1] || cloudflareCode[2]}`);
+  }
+
+  if (rayId) {
+    details.push(`Ray ID ${rayId[1]}`);
+  }
+
+  if (details.length > 0) {
+    return details.join(", ");
+  }
+
+  return plainText.slice(0, 300) || "No response body";
+}
+
 async function sendDiscordMessage(text) {
   if (!DISCORD_WEBHOOK_URL) {
-    return;
+    return { skipped: true };
   }
 
   const response = await fetch(DISCORD_WEBHOOK_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "TelegramHeartbeatMonitor/1.0"
+    },
     body: JSON.stringify({
       content: text
     })
@@ -813,12 +844,42 @@ async function sendDiscordMessage(text) {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Discord webhook error (${response.status}): ${body}`);
+    throw new Error(`Discord webhook error (${response.status}): ${summarizeHttpErrorBody(body)}`);
   }
+
+  return { skipped: false };
 }
 
 async function sendAlertMessage(text) {
-  await Promise.all([sendTelegramMessage(text), sendDiscordMessage(text)]);
+  const channels = [
+    { name: "Telegram", promise: sendTelegramMessage(text) },
+    { name: "Discord", promise: sendDiscordMessage(text) }
+  ];
+  const results = await Promise.allSettled(
+    channels.map(async (channel) => ({
+      name: channel.name,
+      result: await channel.promise
+    }))
+  );
+  let delivered = false;
+  const failedChannels = [];
+
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      if (!result.value.result?.skipped) {
+        delivered = true;
+      }
+      continue;
+    }
+
+    const channel = channels[results.indexOf(result)];
+    failedChannels.push(channel.name);
+    console.error(`${channel.name} alert failed:`, result.reason.message || result.reason);
+  }
+
+  if (!delivered) {
+    throw new Error(`Failed to send alert through: ${failedChannels.join(", ") || "all channels"}`);
+  }
 }
 
 async function notifyOffline() {
