@@ -10,9 +10,7 @@ const TELEGRAM_CHAT_IDS = (process.env.TELEGRAM_CHAT_IDS || "")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
-const DISCORD_WEBHOOK_URL =
-  process.env.DISCORD_WEBHOOK_URL ||
-  "https://discord.com/api/webhooks/1496404854644408330/56zwQWe9A1FxEJPr5Zp-UCmBkCbXfqiAc5ddc4_wtAc4_29xSO7wde0EI9Jvsjo3EzXW";
+const DISCORD_WEBHOOK_URL = (process.env.DISCORD_WEBHOOK_URL || "").trim();
 const PING_SECRET = process.env.PING_SECRET;
 const ALERT_AFTER_MINUTES = Number(process.env.ALERT_AFTER_MINUTES || 20);
 const CHECK_INTERVAL_MS = Number(process.env.CHECK_INTERVAL_MS || 60_000);
